@@ -91,12 +91,11 @@ def show_login():
             </div>
         </div>
         """, unsafe_allow_html=True)
-
+        st.stop()
 
 # ---------------------- Authentication Check ----------------------
 if not check_authentication():
     show_login()
-    st.stop()
 # ---------------------- Page Title & Sidebar ----------------------
 st.markdown("""
     <style>
