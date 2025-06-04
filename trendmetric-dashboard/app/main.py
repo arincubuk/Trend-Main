@@ -279,7 +279,7 @@ if "visible_skus" not in st.session_state:
     st.session_state.visible_skus = 10
 
 # ---------------------- Snowflake Connection ----------------------
-@st.cache_data
+@st.cache_data(ttl=600)
 def get_production_data():
     conn = snowflake.connector.connect(
         user=st.secrets["snowflake"]["user"],
