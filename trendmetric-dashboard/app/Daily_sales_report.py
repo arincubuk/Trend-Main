@@ -15,8 +15,12 @@ TEMPLATES_FOLDER = "templates"
 # Correctly joined relative paths
 master_file_path = os.path.join(TEMPLATES_FOLDER, "Updated_Furniq_Master_file.xlsx")
 template_path = os.path.join(TEMPLATES_FOLDER, "Daily Sales Template.xlsx")
+print("LOOKING FOR MASTER FILE:", os.path.abspath(master_file_path))
+assert os.path.exists(master_file_path), f"File not found: {master_file_path}"
 
+# Now load the file
 master_df = pd.read_excel(master_file_path, engine="openpyxl")
+
 
 SALES_STATUSES = [
     "RECEIVED",
