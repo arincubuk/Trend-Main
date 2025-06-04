@@ -527,22 +527,26 @@ filtered_df = df[df["MASTER_SKU"].isin(visible_skus)]
 
 # Only render table for Product Analysis
 if page == "Product Analysis":
-    # ---------------------- Search ----------------------
-    st.markdown("""
-        <style>
-            input[type="text"] {
-                border-radius: 8px;
-                padding: 8px;
-                font-size: 14px;
-                border: 1px solid #ccc;
-                width: 100%;
-            }
-        </style>
-    """, unsafe_allow_html=True)
+    # ---------------------- Predictive SKU Search ----------------------
+    st.markdown("### 🔍 Search by Master SKU")
 
-    search_input = st.text_input("🔍 Type to search SKU")
-    if search_input:
-        df = df[df["MASTER_SKU"].str.contains(search_input, case=False, na=False)]
+    all_skus = sorted(df["MASTER_SKU"].dropna().unique().tolist())
+    selected_sku = st.selectbox(
+        label="Start typing to search...",
+        options=[""] + all_skus,
+        index=0,
+        placeholder="Search for a SKU"
+    )
+
+    # Determine which SKUs to show
+    if selected_sku:
+        visible_skus = [selected_sku]
+    else:
+        visible_count = st.session_state.visible_skus
+        visible_skus = st.session_state.sorted_skus[:visible_count]
+
+    # ---------------------- Filtered Grouped Data ----------------------
+    filtered_df = df[df["MASTER_SKU"].isin(visible_skus)]
 
     for master_sku, group in filtered_df.groupby("MASTER_SKU"):
         if group.empty:
