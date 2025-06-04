@@ -11,8 +11,8 @@ from datetime import datetime
 st.set_page_config(page_title="Trend Metric | Product Analysis", layout="wide")
 # ---------------------- Constants ----------------------
 SESSION_DURATION = 4 * 60 * 60  # 4 hours in seconds
-LOGO_PATH = "assets/trend.png"
-st.image(LOGO_PATH)
+LOGO_URL = "https://www.dropbox.com/scl/fi/cie56y5sqe1iwu2xzhbzf/trend.png?rlkey=78mweg7tm9833lugvrtt0bs2v&raw=1"
+st.image(LOGO_URL, width=160))
 
 # ---------------------- Session State Initialization ----------------------
 def check_authentication():
