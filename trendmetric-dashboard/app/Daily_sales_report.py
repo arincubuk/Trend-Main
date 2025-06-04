@@ -10,16 +10,17 @@ import snowflake.connector
 # 1) Configuration
 # ----------------------------------------------------------------
 OUTPUT_FOLDER = "/Users/arincubuk/Library/CloudStorage/OneDrive-furniq.co.uk/MACY'S SALES"
-TEMPLATES_FOLDER = "templates"
+# Get the absolute directory of this script (works anywhere)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATES_FOLDER = os.path.join(BASE_DIR, "templates")
 
-# Correctly joined relative paths
+# Safe full paths to both files
 master_file_path = os.path.join(TEMPLATES_FOLDER, "Updated_Furniq_Master_file.xlsx")
 template_path = os.path.join(TEMPLATES_FOLDER, "Daily Sales Template.xlsx")
-print("LOOKING FOR MASTER FILE:", os.path.abspath(master_file_path))
-assert os.path.exists(master_file_path), f"File not found: {master_file_path}"
 
-# Now load the file
-master_df = pd.read_excel(master_file_path, engine="openpyxl")
+# Debug path output (optional)
+print("Resolved path to master template:", master_file_path)
+assert os.path.exists(master_file_path), f"File not found: {master_file_path}"
 
 
 SALES_STATUSES = [
