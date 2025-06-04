@@ -10,7 +10,8 @@ from datetime import datetime
 st.set_page_config(page_title="Trend Metric | Product Analysis", layout="wide")
 # ---------------------- Constants ----------------------
 SESSION_DURATION = 4 * 60 * 60  # 4 hours in seconds
-LOGO_PATH = "/Users/arincubuk/Desktop/trendmetric-dashboard/app/assets/Trend Logo (1).png"
+LOGO_PATH = os.path.join("assets", "trend-logo.png")
+st.image(LOGO_PATH)
 
 # ---------------------- Session State Initialization ----------------------
 def check_authentication():
