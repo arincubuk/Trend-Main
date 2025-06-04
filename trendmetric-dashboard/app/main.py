@@ -1,416 +1,613 @@
-import os
+import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
-from openpyxl import load_workbook
-from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import PatternFill
 import snowflake.connector
-
-# ----------------------------------------------------------------
-# 1) Configuration
-# ----------------------------------------------------------------
-OUTPUT_FOLDER = "/Users/arincubuk/Library/CloudStorage/OneDrive-furniq.co.uk/MACY'S SALES"
-TEMPLATES_FOLDER = "templates"
-
-master_file_path = os.path.join("templates", "Updated_Furniq_Master_file.xlsx")
-template_path = os.path.join(TEMPLATES_FOLDER, "Daily Sales Template.xlsx")
-
-SALES_STATUSES = [
-    "RECEIVED",
-    "SHIPPED",
-    "SHIPPING",
-    "STAGING",
-    "INCIDENT_OPEN",
-    "WAITING_ACCEPTANCE",
-    "CLOSED"
-]
-RETURN_STATUS = ["REFUNDED"]
+import plotly.express as px
+import os
+import time
+from datetime import datetime
 
 
 
-# ----------------------------------------------------------------
-# 2) Connect to Snowflake and Pull Data
-# ----------------------------------------------------------------
-conn = snowflake.connector.connect(
-    user="ARINCUBUK",
-    password="Shearling2024$",
-    account="db19901.europe-west2.gcp",
-    warehouse="MIRAKL",
-    database="PRECOG",
-    schema="MIRAKL_MACY_S_MIRAKL_MIRAKL",
-    role="ACCOUNTADMIN"
-)
+st.set_page_config(page_title="Trend Metric | Product Analysis", layout="wide")
+# ---------------------- Constants ----------------------
+SESSION_DURATION = 4 * 60 * 60  # 4 hours in seconds
+LOGO_URL = "https://www.dropbox.com/scl/fi/cie56y5sqe1iwu2xzhbzf/trend.png?rlkey=78mweg7tm9833lugvrtt0bs2v&raw=1"
 
-cur = conn.cursor()
+# ---------------------- Session State Initialization ----------------------
+def check_authentication():
+    now = time.time()
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+        st.session_state.login_time = 0
 
-sql_query = """
-    SELECT
-        CAST(CREATED_DATE_ORDERS_ORDER_LINES AS DATE) AS "CREATED_DATE_ORDERS_ORDER_LINES",
-        "OFFER_SKU_ORDERS_ORDER_LINES",
-        "ORDER_LINE_STATE_ORDERS_ORDER_LINES",
-        "QUANTITY_ORDERS_ORDER_LINES",
-        "TOTAL_PRICE_ORDERS_ORDER_LINES",
-        "ORDERS_PRECOG_KEY"
-    FROM ORDERS_ORDER_LINES_NEW;
-"""
-
-cur.execute(sql_query)
-rows = cur.fetchall()
-col_names = [desc[0] for desc in cur.description]
-cur.close()
-conn.close()
-
-# Create a DataFrame
-df_snowflake = pd.DataFrame(rows, columns=col_names)
-print("Columns in df_snowflake:", df_snowflake.columns.tolist())
-
-# ----------------------------------------------------------------
-# 3) Process Snowflake Data
-# ----------------------------------------------------------------
-# Convert 'CREATED_DATE_ORDERS_ORDER_LINES' to datetime and remove timezone
-df_snowflake["CREATED_DATE_ORDERS_ORDER_LINES"] = pd.to_datetime(
-    df_snowflake["CREATED_DATE_ORDERS_ORDER_LINES"], errors="coerce"
-).dt.tz_localize(None)  # Remove timezone
-df_snowflake.dropna(subset=["CREATED_DATE_ORDERS_ORDER_LINES"], inplace=True)
-
-# ----------------------------------------------------------------
-# 4) Load Master File for Product Data
-# ----------------------------------------------------------------
-master_df = pd.read_excel(master_file_path, engine="openpyxl")
-
-# Merge Snowflake data with Master file (bringing in 'Product' and other columns)
-df_merged = df_snowflake.merge(
-    master_df,
-    left_on="OFFER_SKU_ORDERS_ORDER_LINES",
-    right_on="Variant SKU",  # Adjust if your master file uses a different column
-    how="left"
-)
-
-# ----------------------------------------------------------------
-# 5) Yesterday’s Sales
-# ----------------------------------------------------------------
-yesterday = datetime.now().date() - timedelta(days=1)
-
-yesterdays_sales = df_merged[
-    (df_merged["CREATED_DATE_ORDERS_ORDER_LINES"].dt.date == yesterday)
-    & (df_merged["ORDER_LINE_STATE_ORDERS_ORDER_LINES"].isin(SALES_STATUSES))
-]
-# Sort by SKU (OFFER_SKU_ORDERS_ORDER_LINES)
-yesterdays_sales = yesterdays_sales.sort_values(by="OFFER_SKU_ORDERS_ORDER_LINES", ascending=True)
-
-yesterdays_sales_summary = yesterdays_sales[
-    [
-        "CREATED_DATE_ORDERS_ORDER_LINES",
-        "ORDERS_PRECOG_KEY",
-        "OFFER_SKU_ORDERS_ORDER_LINES",
-        "QUANTITY_ORDERS_ORDER_LINES",
-        "ORDER_LINE_STATE_ORDERS_ORDER_LINES",
-        "TOTAL_PRICE_ORDERS_ORDER_LINES",
-    ]
-]
-
-daily_category_totals = yesterdays_sales.groupby("Product").agg(
-    {"QUANTITY_ORDERS_ORDER_LINES": "sum", "TOTAL_PRICE_ORDERS_ORDER_LINES": "sum"}
-).reset_index()
-daily_total_qty = yesterdays_sales["QUANTITY_ORDERS_ORDER_LINES"].sum()
-daily_total_amt = yesterdays_sales["TOTAL_PRICE_ORDERS_ORDER_LINES"].sum()
-
-# ----------------------------------------------------------------
-# 6) Load Excel Template
-# ----------------------------------------------------------------
-template_wb = load_workbook(template_path)
-template_ws = template_wb.active
-
-# Clear Old Data in Template (Except Certain Cells)
-start_row = 3
-for row in template_ws.iter_rows(
-    min_row=start_row,
-    max_row=template_ws.max_row,
-    min_col=1,
-    max_col=template_ws.max_column
-):
-    for cell in row:
-        if cell.coordinate not in [
-            "G3", "G4", "G11", "G12", "G13", "G14", "G15", "G16",
-            "G17", "G18", "G19", "G20", "G21", "G22", "G23", 'G24', 'G25', 'G26', 'G27', 'G28', 'G29', 'G30', 'G31', 'G32', 'G33', 'G34', 'G35',
-            "H11", "I11", "J11", "K11", "L11", "J3", "J4", "J5",
-            "J6", "J7", "J8", "J9", "M11", 'N2', 'N3', 'N4', 'N5', 'N6', 'N7', 'N8', 'O3', 'O4', 'O5', 'O6', 'O7', 'O8', 'N11', 'O11', 'P11', 'Q11', 'R11',
-            'H5', 'H6', 'H7', 'P1'
-        ]:
-            cell.value = None
-
-# ----------------------------------------------------------------
-# 7) Populate Yesterday’s Sales in Template
-# ----------------------------------------------------------------
-for r_idx, row_data in enumerate(
-    dataframe_to_rows(yesterdays_sales_summary, index=False, header=False),
-    start=start_row
-):
-    for c_idx, value in enumerate(row_data, start=1):
-        template_ws.cell(row=r_idx, column=c_idx, value=value)
-
-template_ws["H3"] = daily_total_qty
-template_ws["I3"] = daily_total_amt
-# ----------------------------------------------------------------
-# 7.1) Populate Category Counts for Yesterday's Sales
-# ----------------------------------------------------------------
-# Define categories and their corresponding Excel cell locations
-categories = {
-    "SHEARLING JACKET": "K3",
-    "NAPPA JACKET": "K4",
-    "TRENCH COAT": "K5",
-    "BAG": "K6",
-    "SLIPPER/BOOT": "K7",
-}
-
-# Define red fill for conditional formatting
-red_fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
-
-for category, cell in categories.items():
-    # Filter sales data for the current category
-    category_sales = yesterdays_sales[yesterdays_sales["Product"] == category]
-
-    # Calculate the average price
-    if not category_sales.empty:
-        avg_price = category_sales["TOTAL_PRICE_ORDERS_ORDER_LINES"].sum() / category_sales["QUANTITY_ORDERS_ORDER_LINES"].sum()
+    if st.session_state.authenticated and (now - st.session_state.login_time) < SESSION_DURATION:
+        return True
     else:
-        avg_price = 0  # If no sales, default to 0
+        st.session_state.authenticated = False
+        return False
 
-    # Update the Excel cell with the calculated average price
-    template_ws[cell] = avg_price
 
-    # Apply conditional formatting for SHEARLING JACKET and NAPPA JACKET
-    if (category == "SHEARLING JACKET" and avg_price < 400) or (category == "NAPPA JACKET" and avg_price < 180):
-        template_ws[cell].fill = red_fill  # Apply red background
+def show_login():
+    st.markdown("""
+        <style>
+            .login-logo {
+                display: flex;
+                justify-content: center;
+                margin-top: 30px;
+                margin-bottom: 20px;
+            }
+            .login-title {
+                text-align: center;
+                font-size: 24px;
+                font-weight: 700;
+                margin-bottom: 6px;
+            }
+            .login-subtext {
+                text-align: center;
+                font-size: 14px;
+                color: #888;
+                margin-bottom: 24px;
+            }
+            .social-icons {
+                display: flex;
+                justify-content: center;
+                gap: 20px;
+                margin-top: 24px;
+            }
+            .social-icons img {
+                width: 36px;
+                cursor: pointer;
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
-# ----------------------------------------------------------------
-# ----------------------------------------------------------------
-# 7.2) Calculate and Populate Time-Based Percentages for Yesterday’s Sales
-# ----------------------------------------------------------------
+    logo_col1, logo_col2, logo_col3 = st.columns([4, 1, 4])
+    with logo_col2:
+        st.image(LOGO_URL, width=160)
 
-# Define new time intervals
-morning_start, morning_end = 4, 12    # 4:00 AM to 11:59 AM
-afternoon_start, afternoon_end = 12, 18  # 12:00 PM to 5:59 PM
-evening_start_1, evening_end_1 = 18, 24  # 6:00 PM to 11:59 PM
-evening_start_2, evening_end_2 = 0, 4    # 12:00 AM to 3:59 AM (same day)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown('<div class="login-box">', unsafe_allow_html=True)
+        st.markdown('<div class="login-title">Login to your account</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-subtext">Hello, welcome back to your account</div>', unsafe_allow_html=True)
 
-# Extract the hour safely using .loc
-yesterdays_sales = yesterdays_sales.copy()  # Ensure we're working on a new DataFrame, not a slice
-yesterdays_sales.loc[:, "hour"] = yesterdays_sales["CREATED_DATE_ORDERS_ORDER_LINES"].dt.hour
+        email = st.text_input("E-mail", placeholder="example@email.com", label_visibility="collapsed", key="email")
+        password = st.text_input("Password", placeholder="Your Password", type="password", label_visibility="collapsed", key="password")
+        st.checkbox("Remember me", key="remember")
 
-# Calculate total quantity for yesterday
-total_yesterday_quantity = yesterdays_sales["QUANTITY_ORDERS_ORDER_LINES"].sum()
+        if st.button("Login", key="login", use_container_width=True):
+            if email == "arincubuk" and password == "demo123":  # 🔐 Replace this later with env/secrets
+                st.session_state.authenticated = True
+                st.session_state.login_time = time.time()
+                st.rerun()
+            else:
+                st.error("Invalid credentials")
 
-# Calculate percentages for each time period
-morning_quantity = yesterdays_sales[
-    (yesterdays_sales["hour"] >= morning_start) & (yesterdays_sales["hour"] < morning_end)
-]["QUANTITY_ORDERS_ORDER_LINES"].sum()
+        st.markdown("""
+            <div class="social-icons">
+                <img src="https://img.icons8.com/color/48/facebook.png" />
+                <img src="https://img.icons8.com/color/48/google-logo.png" />
+                <img src="https://img.icons8.com/ios-filled/50/mac-os.png" />
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.stop()
 
-afternoon_quantity = yesterdays_sales[
-    (yesterdays_sales["hour"] >= afternoon_start) & (yesterdays_sales["hour"] < afternoon_end)
-]["QUANTITY_ORDERS_ORDER_LINES"].sum()
+# ---------------------- Authentication Check ----------------------
+if not check_authentication():
+    show_login()
+# ---------------------- Page Title & Sidebar ----------------------
+st.markdown("""
+    <style>
+        .card {
+        background-color: #ffffff;
+        padding: 30px;
+        border-radius: 18px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+        margin-bottom: 30px;
+    }
+    .main-container {
+        background-color: #f7f8fc;
+        padding: 2rem;
+    }
+    /* Shrink sidebar width */
+    [data-testid="stSidebar"] {
+        width: 220px;
+        min-width: 220px;
+        background-color: #f8f9fa;
+        padding: 1rem 1rem 2rem 1rem;
+        border-radius: 16px;
+        box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
+    }
 
-# Evening now includes both:
-# 1. 6:00 PM to 11:59 PM
-# 2. 12:00 AM to 3:59 AM (same-day early morning sales)
-evening_quantity = yesterdays_sales[
-    ((yesterdays_sales["hour"] >= evening_start_1) & (yesterdays_sales["hour"] < evening_end_1)) |
-    ((yesterdays_sales["hour"] >= evening_start_2) & (yesterdays_sales["hour"] < evening_end_2))
-]["QUANTITY_ORDERS_ORDER_LINES"].sum()
+    /* Shrink logo size inside sidebar */
+    [data-testid="stSidebar"] img {
+        width: 120px !important;
+        border-radius: 8px;
+        margin-bottom: 16px;
+    }
 
-# Ensure no division by zero
-morning_percentage = (morning_quantity / total_yesterday_quantity * 100) if total_yesterday_quantity > 0 else 0
-afternoon_percentage = (afternoon_quantity / total_yesterday_quantity * 100) if total_yesterday_quantity > 0 else 0
-evening_percentage = (evening_quantity / total_yesterday_quantity * 100) if total_yesterday_quantity > 0 else 0
+    /* Sidebar links style */
+    .sidebar-links {
+        font-family: 'Segoe UI', sans-serif;
+        font-size: 15px;
+        margin-top: 16px;
+    }
+    .nav-link {
+        display: block;
+        padding: 10px 14px;
+        margin: 6px 0;
+        border-radius: 8px;
+        color: #333;
+        text-decoration: none;
+        background-color: #f1f1f1;
+        transition: background-color 0.2s ease-in-out;
+    }
+    .nav-link:hover {
+        background-color: #e2e6ea;
+    }
+    .active-link {
+        background-color: #007bff !important;
+        color: white !important;
+    }
+    group-box {
+        background-color: #fff;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 30px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        transition: box-shadow 0.2s ease-in-out;
+    }
+    .group-box:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .product-title {
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 12px;
+    }
+    .header-row, .data-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 0;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 14px;
+    }
+    .header-row {
+        font-weight: bold;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 10px;
+    }
+    .data-col {
+        flex: 1;
+        text-align: center;
+    }
+    .image-wrapper {
+        text-align: center;
+        margin-bottom: 10px;
+    }
+    .product-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #212529;
+        margin-bottom: 8px;
+    }
+    .variant-size {
+        font-size: 14px;
+        font-weight: 500;
+        color: #333333;
+        padding-top: 8px;
+    }
+    .main-title {
+        font-size: 32px;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+    .subtext {
+        font-size: 16px;
+        color: #6c757d;
+    }
+    .sidebar .sidebar-content {
+        background-color: #f8f9fa;
+    }
+    sidebar-links {
+        font-family: 'Segoe UI', sans-serif;
+        font-size: 16px;
+        margin-top: 20px;
+    }
+    .nav-link {
+        display: block;
+        padding: 10px 16px;
+        margin: 8px 0;
+        border-radius: 8px;
+        color: #333;
+        text-decoration: none;
+        background-color: #f1f1f1;
+        transition: background-color 0.2s ease-in-out;
+    }
+    .nav-link:hover {
+        background-color: #e2e6ea;
+    }
+    .active-link {
+        background-color: #007bff !important;
+        color: white !important;
+    }
+    .main-title {
+        font-size: 32px;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+    .subtext {
+        font-size: 16px;
+        color: #6c757d;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# Populate Excel template for yesterday’s sales (Converted to Decimal %)
-template_ws["I5"] = morning_percentage / 100  # Morning %
-template_ws["I6"] = afternoon_percentage / 100  # Afternoon %
-template_ws["I7"] = evening_percentage / 100  # Evening %
-# ----------------------------------------------------------------
-# 7.3) Calculate Top 5 SKUs by Quantity for Yesterday’s Sales
-# ----------------------------------------------------------------
+# Apply light background globally
+st.markdown('<div class="main-container">', unsafe_allow_html=True)
 
-# Group by Master SKU and calculate total quantity for each SKU
-top_skus = (
-    yesterdays_sales.groupby("Master SKU")["QUANTITY_ORDERS_ORDER_LINES"]
-    .sum()
-    .reset_index()
-    .sort_values(by="QUANTITY_ORDERS_ORDER_LINES", ascending=False)
-    .head(5)  # Select the top 5 SKUs
-)
+# --------- Sidebar Navigation with Custom HTML ---------
+if "active_page" not in st.session_state:
+    st.session_state.active_page = "Dashboard"
 
-# Populate the top 5 SKUs into the Excel template
-for idx, row in enumerate(top_skus.itertuples(index=False), start=3):  # Start at row 3
-    template_ws[f"L{idx}"] = row[0]  # Master SKU
-    template_ws[f"M{idx}"] = row[1]  # Quantity
+LOGO_URL = "https://www.dropbox.com/scl/fi/cie56y5sqe1iwu2xzhbzf/trend.png?rlkey=78mweg7tm9833lugvrtt0bs2v&raw=1"
+st.sidebar.image(LOGO_URL, width=120, use_container_width=False)
+st.sidebar.markdown("## Navigation")
+st.sidebar.markdown("<div class='sidebar-links'>", unsafe_allow_html=True)
+if st.sidebar.button("Dashboard"):
+    st.session_state.active_page = "Dashboard"
+if st.sidebar.button("Product Analysis"):
+    st.session_state.active_page = "Product Analysis"
+if st.sidebar.button("Reports"):
+    st.session_state.active_page = "Reports"
+st.sidebar.markdown("</div>", unsafe_allow_html=True)
 
-# ----------------------------------------------------------------
-# 8) Monthly Summaries
-# ----------------------------------------------------------------
-months = pd.date_range(start="2024-01-01 00:00:00", end=datetime.now(), freq="MS").strftime("%B %Y").tolist()
-row_idx = 12
+page = st.session_state.active_page
 
-for month_label in months:
-    month_start = pd.to_datetime(month_label)
-    month_end = month_start + pd.offsets.MonthEnd(0)
+# Page Title (with new style & Lucide icon)
+if page == "Dashboard":
+    st.markdown(f"<div class='main-title'><i class='lu lu-presentation'></i> Dashboard</div>", unsafe_allow_html=True)
+    st.markdown("<div class='subtext'>Overview of production, sales, and return KPIs</div>", unsafe_allow_html=True)
+elif page == "Product Analysis":
+    st.markdown(f"<div class='main-title'><i class='lu lu-package-check'></i> Product Analysis</div>", unsafe_allow_html=True)
+    st.markdown("<div class='subtext'>Live SKU Ranking Table — Powered by Snowflake</div>", unsafe_allow_html=True)
 
-    month_data = df_merged[
-        (df_merged["CREATED_DATE_ORDERS_ORDER_LINES"] >= month_start)
-        & (df_merged["CREATED_DATE_ORDERS_ORDER_LINES"] <= month_end)
-    ]
+# ---------------------- Session Init ----------------------
+if "visible_skus" not in st.session_state:
+    st.session_state.visible_skus = 10
 
-    # Sales and Returns
-    sales_subset = month_data[month_data["ORDER_LINE_STATE_ORDERS_ORDER_LINES"].isin(SALES_STATUSES)]
-    returns_subset = month_data[month_data["ORDER_LINE_STATE_ORDERS_ORDER_LINES"].isin(RETURN_STATUS)]
+# ---------------------- Snowflake Connection ----------------------
+@st.cache_data
+def get_production_data():
+    conn = snowflake.connector.connect(
+        user=st.secrets["snowflake"]["user"],
+        password=st.secrets["snowflake"]["password"],
+        account=st.secrets["snowflake"]["account"],
+        warehouse=st.secrets["snowflake"]["warehouse"],
+        database=st.secrets["snowflake"]["database"],
+        schema=st.secrets["snowflake"]["schema"],
+        role=st.secrets["snowflake"]["role"]
+    )
 
-    net_value = sales_subset["TOTAL_PRICE_ORDERS_ORDER_LINES"].sum()
-    sales_quantity = sales_subset["QUANTITY_ORDERS_ORDER_LINES"].sum()
-    returns_quantity = returns_subset["QUANTITY_ORDERS_ORDER_LINES"].sum()
-    gross_quantity = sales_quantity + returns_quantity
+    query = """
+    SELECT
+        MASTER_SKU,
+        VARIANT_SKU,
+        PRODUCT_SIZE,
+        TOTAL_SALES,
+        SHOPIFY_INVENTORY AS STOCK,
+        DAILY_SALES_VELOCITY_SCORE AS MARKETABILITY,
+        RETURN_PERCENTAGE,
+        IMAGE_LINK,
+        RANKS
+    FROM UNIFIED_DATA
+    ORDER BY MASTER_SKU, PRODUCT_SIZE
+    """
+    df = pd.read_sql(query, conn)
+    conn.close()
+    return df
 
-    return_percentage = (returns_quantity / gross_quantity * 100) if gross_quantity > 0 else 0
-    return_percentage = round(return_percentage, 2)
 
-    gross_value = month_data["TOTAL_PRICE_ORDERS_ORDER_LINES"].sum()
+@st.cache_data
+def get_order_data():
+    conn = snowflake.connector.connect(
+        user=st.secrets["snowflake"]["user"],
+        password=st.secrets["snowflake"]["password"],
+        account=st.secrets["snowflake"]["account"],
+        warehouse=st.secrets["snowflake"]["warehouse"],
+        database=st.secrets["snowflake"]["database"],
+        schema=st.secrets["snowflake"]["schema"],
+        role=st.secrets["snowflake"]["role"]
+    )
 
-    template_ws[f"I{row_idx}"] = net_value
-    template_ws[f"O{row_idx}"] = gross_value
-    template_ws[f"M{row_idx}"] = return_percentage
-    template_ws[f"N{row_idx}"] = gross_quantity
-    row_idx += 1
-# ----------------------------------------------------------------
-# 8.1) Populate Category Counts for Monthly Summaries
-# ----------------------------------------------------------------
-row_idx_shearling = 12  # Start row for SHEARLING JACKET (J column)
-row_idx_nappa = 12  # Start row for NAPPA JACKET (K column)
-row_idx_trench = 12  # Start row for TRENCH COAT JACKET (L column)
+    query = """
+        SELECT CREATED_DATE_ORDERS_ORDER_LINES AS CREATED_DATE,
+               QUANTITY_ORDERS_ORDER_LINES AS QUANTITY
+        FROM ORDERS_ORDER_LINES_NEW
+        """
+    df = pd.read_sql(query, conn)
+    conn.close()
+    return df
 
-for month_label in months:
-    month_start = pd.to_datetime(month_label)
-    month_end = month_start + pd.offsets.MonthEnd(0)
 
-    # Filter data for the current month
-    month_data = df_merged[
-        (df_merged["CREATED_DATE_ORDERS_ORDER_LINES"] >= month_start)
-        & (df_merged["CREATED_DATE_ORDERS_ORDER_LINES"] <= month_end)
-    ]
-    # Calculate total sales quantity for the month
-    total_month_quantity = month_data["QUANTITY_ORDERS_ORDER_LINES"].sum()
+df_orders = get_order_data()
+df_orders["CREATED_DATE"] = pd.to_datetime(df_orders["CREATED_DATE"])
+df_orders["Month"] = df_orders["CREATED_DATE"].dt.to_period("M").astype(str)
+monthly_sales = df_orders.groupby("Month")["QUANTITY"].sum().reset_index()
 
-    # Calculate SHEARLING JACKET count for the month
-    shearling_count = month_data[month_data["Product"] == "SHEARLING JACKET"]["QUANTITY_ORDERS_ORDER_LINES"].sum()
-    shearling_percentage = (shearling_count / total_month_quantity * 100) if total_month_quantity > 0 else 0
-    shearling_percentage = round(shearling_percentage, 2)  # Round to 2 decimal places
-    template_ws[f"J{row_idx_shearling}"] = shearling_percentage / 100
+# ---------------------- Load Data ----------------------
+df = get_production_data()
+# Replace broken/empty image links with placeholder
+placeholder_img = "https://via.placeholder.com/120"
+df["IMAGE"] = df["IMAGE_LINK"].apply(lambda x: x if isinstance(x, str) and x.strip() != "" else placeholder_img)
 
-    # Calculate NAPPA JACKET count for the month
-    nappa_count = month_data[month_data["Product"] == "NAPPA JACKET"]["QUANTITY_ORDERS_ORDER_LINES"].sum()
-    nappa_percentage = (nappa_count / total_month_quantity * 100) if total_month_quantity > 0 else 0
-    nappa_percentage = round(nappa_percentage, 2)  # Round to 2 decimal places
-    template_ws[f"K{row_idx_nappa}"] = nappa_percentage / 100  # Update column K
 
-    # Calculate Trench JACKET count for the month
-    trench_count = month_data[month_data["Product"] == "TRENCH COAT"]["QUANTITY_ORDERS_ORDER_LINES"].sum()
-    trench_percentage = (trench_count / total_month_quantity * 100) if total_month_quantity > 0 else 0
-    trench_percentage = round(trench_percentage, 2)  # Round to 2 decimal places
-    template_ws[f"L{row_idx_nappa}"] = trench_percentage / 100  # Update column L
 
-    # Increment row indices for the next month
-    row_idx_shearling += 1
-    row_idx_nappa += 1
-    row_idx_trench += 1
-# ----------------------------------------------------------------
-# 8.2) Populate Monthly Sales Quantity in Column H (Starting H12)
-# ----------------------------------------------------------------
-row_idx_quantity = 12  # Start row for sales quantity in Column H
+st.markdown('</div>', unsafe_allow_html=True)  # Close main container
 
-for month_label in months:
-    month_start = pd.to_datetime(month_label)
-    month_end = month_start + pd.offsets.MonthEnd(0)
-    # Filter data for the current month and only include Sales statuses
-    month_sales_data = df_merged[
-        (df_merged["CREATED_DATE_ORDERS_ORDER_LINES"] >= month_start)
-        & (df_merged["CREATED_DATE_ORDERS_ORDER_LINES"] <= month_end)
-        & (df_merged["ORDER_LINE_STATE_ORDERS_ORDER_LINES"].isin(SALES_STATUSES))
-        ]
+# ---------------------- Ensure Order for Pagination ----------------------
+if "selected_sku" not in st.session_state:
+    st.session_state.selected_sku = None
+# Initialize session state variable for sorted_skus
+if "sorted_skus" not in st.session_state:
+    st.session_state.sorted_skus = (
+        df.drop_duplicates(subset="MASTER_SKU")
+          .sort_values("RANKS")["MASTER_SKU"]
+          .tolist()
+    )
 
-    # Calculate total sales quantity for the month
-    sales_quantity = month_sales_data["QUANTITY_ORDERS_ORDER_LINES"].sum()
+df["MASTER_SKU"] = pd.Categorical(df["MASTER_SKU"], categories=st.session_state.sorted_skus, ordered=True)
+df = df.sort_values(["MASTER_SKU", "PRODUCT_SIZE"])
 
-    # Populate the sales quantity in Column H for the current month
-    template_ws[f"H{row_idx_quantity}"] = sales_quantity
+# ---------------------- Filter for Pagination ----------------------
+visible_count = st.session_state.visible_skus
+visible_skus = st.session_state.sorted_skus[:visible_count]
+filtered_df = df[df["MASTER_SKU"].isin(visible_skus)]
 
-    # Increment the row index for the next month
-    row_idx_quantity += 1
-# ----------------------------------------------------------------
-# 8.4) Calculate and Populate Time-Based Percentages for Monthly Sales
-# ----------------------------------------------------------------
-row_idx_morning = 12  # Start row for Morning % (Column P)
-row_idx_afternoon = 12  # Start row for Afternoon % (Column Q)
-row_idx_evening = 12  # Start row for Evening % (Column R)
+# ---------------------- Custom Styling ----------------------
+st.markdown("""
+    <style>
+        .metric-label { font-size: 18px; color: #6c757d; }
+        .metric-value { font-size: 18px; font-weight: 600; }
+        .product-title { font-size: 18px; font-weight: bold; margin-bottom: 0.5rem; }
+        .variant-size { font-size: 18px; font-weight: 500; margin-top: 0.5rem; }
+        .group-box { background-color: #f9f9f9; border-radius: 12px; padding: 1rem; margin-bottom: 2rem; }
+    </style>
+""", unsafe_allow_html=True)
+# ---------------------- Dashboard Content ----------------------
+if page == "Dashboard":
+    # ---- KPIs (replace these with dynamic values if needed) ----
+    total_sales = 1788
+    total_returns = 430
+    return_pct = 24.0
+    cancellations = 238
 
-for month_label in months:
-    month_start = pd.to_datetime(month_label)
-    month_end = month_start + pd.offsets.MonthEnd(0)
+    # ---- Top White Strip with Date Filter and KPIs ----
+    st.markdown("""
+        <style>
+        .top-strip {
+            background-color: #ffffff;
+            padding: 20px 30px;
+            border-bottom: 1px solid #e0e0e0;
+            border-radius: 0 0 16px 16px;
+            margin-left: -3rem;
+            margin-right: -3rem;
+        }
+        .kpi-container {
+            display: flex;
+            justify-content: space-between;
+            gap: 2rem;
+            margin-top: 10px;
+        }
+        .kpi-box {
+            flex: 1;
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 16px;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+        .kpi-title {
+            font-size: 14px;
+            color: #6c757d;
+            margin-bottom: 8px;
+        }
+        .kpi-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #333;
+        }
+        .date-range-box {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
-    # Filter data for the current month
-    month_data = df_merged[
-        (df_merged["CREATED_DATE_ORDERS_ORDER_LINES"] >= month_start)
-        & (df_merged["CREATED_DATE_ORDERS_ORDER_LINES"] <= month_end)
-    ].copy()  # Copy the filtered DataFrame
+    with st.container():
+        st.markdown('<div class="top-strip">', unsafe_allow_html=True)
 
-    # Extract the hour safely
-    month_data.loc[:, "hour"] = month_data["CREATED_DATE_ORDERS_ORDER_LINES"].dt.hour
+        col1, col2 = st.columns([2, 6])
+        with col1:
+            start_date = st.date_input("Start date", datetime(2024, 1, 1))
+        with col2:
+            end_date = st.date_input("End date", datetime.today())
 
-    # Calculate total quantity for the month
-    total_month_quantity = month_data["QUANTITY_ORDERS_ORDER_LINES"].sum()
+        st.markdown("""
+            <div class="kpi-container">
+                <div class="kpi-box">
+                    <div class="kpi-title">Total Sales</div>
+                    <div class="kpi-value">{:,}</div>
+                </div>
+                <div class="kpi-box">
+                    <div class="kpi-title">Total Returns</div>
+                    <div class="kpi-value">{:,}</div>
+                </div>
+                <div class="kpi-box">
+                    <div class="kpi-title">Return %</div>
+                    <div class="kpi-value">{:.1f}%</div>
+                </div>
+                <div class="kpi-box">
+                    <div class="kpi-title">Cancellations</div>
+                    <div class="kpi-value">{:,}</div>
+                </div>
+            </div>
+        </div>
+        """.format(total_sales, total_returns, return_pct, cancellations), unsafe_allow_html=True)
+    with st.container():
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.markdown("### Monthly Units Sold")
 
-    # Calculate percentages for each time period
-    morning_quantity = month_data[
-        (month_data["hour"] >= morning_start) & (month_data["hour"] < morning_end)
-    ]["QUANTITY_ORDERS_ORDER_LINES"].sum()
-    morning_percentage = (morning_quantity / total_month_quantity * 100) if total_month_quantity > 0 else 0
+        fig = px.bar(
+            monthly_sales,
+            x="Month",
+            y="QUANTITY",
+            labels={"QUANTITY": "Units Sold", "Month": "Month"},
+            color_discrete_sequence=["#7367f0"]
+        )
+        fig.update_layout(
+            plot_bgcolor="rgba(0,0,0,0)",
+            paper_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="#333", size=14),
+            margin=dict(t=30, b=10)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    afternoon_quantity = month_data[
-        (month_data["hour"] >= afternoon_start) & (month_data["hour"] < afternoon_end)
-    ]["QUANTITY_ORDERS_ORDER_LINES"].sum()
-    afternoon_percentage = (afternoon_quantity / total_month_quantity * 100) if total_month_quantity > 0 else 0
+    # Dummy sales-by-location data (replace with your real sales data)
+    map_data = pd.DataFrame({
+        'City': ['New York', 'Los Angeles', 'Chicago', 'Houston', 'Miami'],
+        'Sales': [300, 200, 150, 180, 220],
+        'Lat': [40.7128, 34.0522, 41.8781, 29.7604, 25.7617],
+        'Lon': [-74.0060, -118.2437, -87.6298, -95.3698, -80.1918]
+        })
 
-    evening_quantity = month_data[
-        ((month_data["hour"] >= evening_start_1) & (month_data["hour"] < evening_end_1)) |
-        ((month_data["hour"] >= evening_start_2) & (month_data["hour"] < evening_end_2))
-    ]["QUANTITY_ORDERS_ORDER_LINES"].sum()
-    evening_percentage = (evening_quantity / total_month_quantity * 100) if total_month_quantity > 0 else 0
+    # Styling + map container
+    st.markdown("""
+    <style>
+        .card-map {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 18px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+            margin-bottom: 30px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
-    # Populate Excel template for the current month
-    # Populate Excel template for monthly sales percentages
-    template_ws[f"P{row_idx_morning}"] = morning_percentage / 100  # Morning %
-    template_ws[f"Q{row_idx_afternoon}"] = afternoon_percentage / 100  # Afternoon %
-    template_ws[f"R{row_idx_evening}"] = evening_percentage / 100  # Evening %
+    with st.container():
+        st.markdown('<div class="card-map">', unsafe_allow_html=True)
+        st.markdown("### Sales by Location")
 
-    # Increment row indices for the next month
-    row_idx_morning += 1
-    row_idx_afternoon += 1
-    row_idx_evening += 1
-# ----------------------------------------------------------------
-# 9) Save Populated Template
-# ----------------------------------------------------------------
-current_date_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-output_excel = os.path.join(OUTPUT_FOLDER, f"Sales Report {current_date_str}.xlsx")
+    fig = px.scatter_mapbox(
+        map_data,
+        lat="Lat",
+        lon="Lon",
+        size="Sales",
+        color="Sales",
+        hover_name="City",
+        zoom=3,
+        height=500,
+        color_continuous_scale=px.colors.sequential.Purples
+    )
+    fig.update_layout(
+        mapbox_style="carto-positron",
+        margin={"r":0,"t":0,"l":0,"b":0},
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+# ---------------------- Render Grouped Table ----------------------
+unique_skus = df["MASTER_SKU"].drop_duplicates().tolist()
+visible_skus = unique_skus[:visible_count]
+filtered_df = df[df["MASTER_SKU"].isin(visible_skus)]
 
-print("Attempting to save Excel file to:", output_excel)
-try:
-    template_wb.save(output_excel)
-    print("Excel file saved successfully.")
-except Exception as e:
-    print("Error saving the Excel file:", e)
+# Only render table for Product Analysis
+if page == "Product Analysis":
+    # ---------------------- Search ----------------------
+    st.markdown("""
+        <style>
+            input[type="text"] {
+                border-radius: 8px;
+                padding: 8px;
+                font-size: 14px;
+                border: 1px solid #ccc;
+                width: 100%;
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
-from io import BytesIO
-def generate_daily_sales_report():
-    # all your existing logic remains unchanged...
+    search_input = st.text_input("🔍 Type to search SKU")
+    if search_input:
+        df = df[df["MASTER_SKU"].str.contains(search_input, case=False, na=False)]
 
-    output = BytesIO()
-    template_wb.save(output)
-    output.seek(0)
-    return output, f"Sales Report {current_date_str}.xlsx"
+    for master_sku, group in filtered_df.groupby("MASTER_SKU"):
+        if group.empty:
+            continue
+
+        with st.container():
+            st.markdown("<div class='group-box'>", unsafe_allow_html=True)
+
+            col_image, col_data = st.columns([1.2, 5])
+            with col_image:
+                st.markdown(f"<div class='product-title'>{master_sku}</div>", unsafe_allow_html=True)
+                st.image(group["IMAGE"].iloc[0], width=160)
+
+            with col_data:
+                # Header Row
+                header_cols = st.columns([1.5, 1, 1, 1, 1])
+                header_cols[0].markdown("**Size**")
+                header_cols[1].markdown("**Sales**")
+                header_cols[2].markdown("**Stock**")
+                header_cols[3].markdown("**Marketability**")
+                header_cols[4].markdown("**Returns**")
+
+                # Data Rows
+                for _, row in group.iterrows():
+                    cols = st.columns([1.5, 1, 1, 1, 1])
+                    cols[0].markdown(f"{row['PRODUCT_SIZE']}")
+                    sales = int(row["TOTAL_SALES"]) if pd.notna(row["TOTAL_SALES"]) else 0
+                    stock = int(row["STOCK"]) if pd.notna(row["STOCK"]) else 0
+                    market = round(row["MARKETABILITY"], 2) if pd.notna(row["MARKETABILITY"]) else 0
+                    returns = round(row["RETURN_PERCENTAGE"], 1) if pd.notna(row["RETURN_PERCENTAGE"]) else 0
+
+                    cols[1].markdown(f"{sales}")
+                    cols[2].markdown(f"{stock}")
+                    cols[3].markdown(f"{market}")
+                    cols[4].markdown(f"{returns}%")
+
+            st.markdown("</div>", unsafe_allow_html=True)  # Close group-box
+             # ---- Modal simulation ----
+    if st.session_state.selected_sku:
+        clicked_data = df[df["MASTER_SKU"] == st.session_state.selected_sku]
+
+        with st.expander(f"🔍 Product Details — {st.session_state.selected_sku}", expanded=True):
+            st.image(clicked_data["IMAGE"].iloc[0], width=200)
+            st.markdown("### This will be replaced with AI-powered insights...")
+            st.markdown(f"**Total Variants:** {clicked_data.shape[0]}")
+            st.dataframe(clicked_data[["PRODUCT_SIZE", "TOTAL_SALES", "STOCK", "MARKETABILITY", "RETURN_PERCENTAGE"]])
+
+        if st.button("❌ Close", key="close_modal"):
+            st.session_state.selected_sku = None
+
+elif page == "Reports":
+    from Daily_sales_report import generate_daily_sales_report
+    st.markdown("### 📥 Download Reports")
+    if st.button("Download Daily Sales Report"):
+        output, filename = generate_daily_sales_report()
+        st.download_button(
+            label="📄 Click to Download Excel Report",
+            data=output,
+            file_name=filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+
+    # --------------- Load More Button ------------------
+    if visible_count < len(unique_skus):
+        if st.button("🔄 Load More SKUs"):
+            st.session_state.visible_skus += 10
+            st.rerun()
