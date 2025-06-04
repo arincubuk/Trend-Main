@@ -11,7 +11,7 @@ from datetime import datetime
 st.set_page_config(page_title="Trend Metric | Product Analysis", layout="wide")
 # ---------------------- Constants ----------------------
 SESSION_DURATION = 4 * 60 * 60  # 4 hours in seconds
-LOGO_PATH = "assets/trend-logo (1).png"
+LOGO_PATH = "assets/trend.png"
 st.image(LOGO_PATH)
 
 # ---------------------- Session State Initialization ----------------------
