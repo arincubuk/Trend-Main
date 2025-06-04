@@ -2,4 +2,4 @@ streamlit
 pandas
 snowflake-connector-python
 plotly
-openpyxl  # for Excel export
+openpyxl
