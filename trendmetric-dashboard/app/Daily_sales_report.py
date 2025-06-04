@@ -16,6 +16,8 @@ TEMPLATES_FOLDER = "templates"
 master_file_path = os.path.join(TEMPLATES_FOLDER, "Updated_Furniq_Master_file.xlsx")
 template_path = os.path.join(TEMPLATES_FOLDER, "Daily Sales Template.xlsx")
 
+master_df = pd.read_excel(master_file_path, engine="openpyxl")
+
 SALES_STATUSES = [
     "RECEIVED",
     "SHIPPED",
