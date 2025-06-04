@@ -10,8 +10,9 @@ import snowflake.connector
 # 1) Configuration
 # ----------------------------------------------------------------
 OUTPUT_FOLDER = "/Users/arincubuk/Library/CloudStorage/OneDrive-furniq.co.uk/MACY'S SALES"
-TEMPLATES_FOLDER = "/Users/arincubuk/Library/CloudStorage/OneDrive-furniq.co.uk/MACY'S SALES/Templates"
+TEMPLATES_FOLDER = "templates"
 
+# Correctly joined relative paths
 master_file_path = os.path.join(TEMPLATES_FOLDER, "Updated_Furniq_Master_file.xlsx")
 template_path = os.path.join(TEMPLATES_FOLDER, "Daily Sales Template.xlsx")
 
