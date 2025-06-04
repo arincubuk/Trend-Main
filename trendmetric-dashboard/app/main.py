@@ -592,7 +592,11 @@ if page == "Product Analysis":
 
         if st.button("❌ Close", key="close_modal"):
             st.session_state.selected_sku = None
-
+ # --------------- Load More Button ------------------
+    if visible_count < len(unique_skus):
+        if st.button("🔄 Load More SKUs"):
+            st.session_state.visible_skus += 10
+            st.rerun()
 elif page == "Reports":
     from Daily_sales_report import generate_daily_sales_report
     st.markdown("### 📥 Download Reports")
@@ -606,8 +610,3 @@ elif page == "Reports":
         )
 
 
-    # --------------- Load More Button ------------------
-    if visible_count < len(unique_skus):
-        if st.button("🔄 Load More SKUs"):
-            st.session_state.visible_skus += 10
-            st.rerun()
